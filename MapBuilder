@@ -1,0 +1,125 @@
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+
+import java.io.PrintWriter;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.HashSet;
+import java.util.List;
+
+import java.util.concurrent.RecursiveTask;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+public class MapBuilder extends RecursiveTask<String> {
+
+    private String src;
+    private PrintWriter printWriter;
+    private HashSet<String> links;
+    private String tabs;
+
+    public MapBuilder(String src, PrintWriter printWriter, HashSet<String> links, String tabs) {
+        this.src = src;
+        this.printWriter = printWriter;
+        this.links = links;
+        this.tabs = tabs;
+    }
+
+    @Override
+    protected String compute() {
+        try {
+            Document doc = Jsoup.connect(src).maxBodySize(0).timeout(0).execute().parse();
+            Thread.sleep(150);
+
+            HashSet<MapBuilder> subTasks = new HashSet<>();
+            HashSet<String> workingLinks = new HashSet<>();
+            tabs = tabs + "\t";
+
+            List<Element> newList = linkListBuilder(doc, src);
+
+            for (Element element : newList) {
+                String newLink = srcFormatter(src, element);
+                if (newLink.equals("Страницы не существует") || workingLinks.contains(newLink) || links.contains(newLink)){
+                    continue;
+                } else {
+                    workingLinks.add(newLink);
+                    links.add(newLink);
+                }
+            }
+
+            for (String newSrc : workingLinks){
+                MapBuilder task = new MapBuilder(newSrc, printWriter, links, tabs);
+                task.fork();
+                subTasks.add(task);
+            }
+
+            for (MapBuilder task : subTasks) {
+                printWriter.write(tabs + task.join() +"\n");
+            }
+        } catch (Exception ex){
+            ex.printStackTrace();
+        }
+        return src;
+    }
+
+    public static List linkListBuilder(Document doc, String src){
+        return Stream
+                .concat(doc.select("a[href~=(^\\/\\S+\\/)]").stream(),
+                        doc.select("a[href~=(^" + src + ")]").stream())
+                .collect(Collectors.toList());
+    }
+
+    public static String srcFormatter(String src, Element element){
+        String newSrc;
+
+        if (element.attr("href").contains(src)) {
+            if (element.attr("href").split(src).length < 2){
+                return "";
+            }
+            newSrc = element.attr("href");
+        } else {
+            newSrc = src + element.attr("href");
+        }
+
+        if (!pageExists(newSrc)){
+            return "Страницы не существует";
+        }
+        return newSrc;
+    }
+
+    public static boolean pageExists(String newSrc){
+        int responseCode = 0;
+
+        try {
+            URL url = new URL(newSrc);
+            HttpURLConnection huc = (HttpURLConnection) url.openConnection();
+            huc.setRequestMethod("HEAD");
+
+            responseCode = huc.getResponseCode();
+        } catch (Exception ex){
+            ex.printStackTrace();
+        }
+        if (responseCode != HttpURLConnection.HTTP_OK){
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    public String getSrc() {
+        return src;
+    }
+
+    public void setSrc(String src) {
+        this.src = src;
+    }
+
+    public PrintWriter getPrintWriter() {
+        return printWriter;
+    }
+
+    public void setPrintWriter(PrintWriter printWriter) {
+        this.printWriter = printWriter;
+    }
+}
