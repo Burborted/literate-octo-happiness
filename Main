@@ -1,0 +1,22 @@
+import java.io.PrintWriter;
+
+import java.util.HashSet;
+import java.util.concurrent.ForkJoinPool;
+
+public class Main {
+    public static void main(String[] args) {
+        try {
+            String src = "https://yandex.ru";
+            PrintWriter printWriter = new PrintWriter("C:\\Programming\\java_basics\\13_Multithreading\\WebPageMap\\out\\Webpagemap.txt");
+            HashSet<String> links = new HashSet<>();
+            links.add(src);
+            String tabs = "";
+
+            printWriter.write(new ForkJoinPool().invoke(new MapBuilder(src, printWriter, links, tabs)));
+            printWriter.close();
+
+        } catch (Exception ex){
+            ex.printStackTrace();
+        }
+    }
+}
