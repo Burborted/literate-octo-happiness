@@ -1,0 +1,129 @@
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.HashSet;
+import java.util.List;
+
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.RecursiveTask;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+public class ListBuilder extends RecursiveTask<CopyOnWriteArraySet<String>> {
+
+    private String src;
+    private CopyOnWriteArraySet<String> links;
+    int depth;
+
+    public ListBuilder(String src, CopyOnWriteArraySet links, int depth) {
+        this.src = src;
+        this.links = links;
+        this.depth = depth;
+    }
+
+    @Override
+    protected CopyOnWriteArraySet<String> compute() {
+        try {
+            System.out.println("Fetching " + src);
+            Document doc = Jsoup.connect(src).maxBodySize(0).timeout(0).execute().parse();
+            Thread.sleep(250);
+
+            HashSet<ListBuilder> subTasks = new HashSet<>();
+
+            List<Element> newList = linkListBuilder(doc, src);
+
+            for (Element element : newList) {
+                String newLink = srcFormatter(src, element);
+                if (newLink.equals("Страницы не существует") || links.contains(newLink)) {
+                    continue;
+                } else {
+                    links.add(newLink);
+                }
+            }
+
+            if (depth > 0){
+                for (String newSrc : links){
+                    try {
+                        ListBuilder task = new ListBuilder(newSrc, links, depth);
+                        task.fork();
+                        subTasks.add(task);
+                    } catch (Exception ex){
+                        System.out.println("\n Error \n");
+                    }
+                }
+
+                depth = depth - 1;
+            }
+
+            for (ListBuilder task : subTasks) {
+                links.addAll(task.join());
+            }
+        } catch (Exception ex){
+            ex.printStackTrace();
+        }
+        return links;
+    }
+
+    public static List linkListBuilder(Document doc, String src){
+        return Stream
+                .concat(doc.select("a[href~=(^\\/\\S+\\/)]").stream(),
+                        doc.select("a[href~=(^" + src + ")]").stream())
+                .collect(Collectors.toList());
+    }
+
+    public static String srcFormatter(String src, Element element){
+        String newSrc;
+
+        if (element.attr("href").contains(src)) {
+            if (element.attr("href").split(src).length < 2){
+                return "";
+            }
+            newSrc = element.attr("href");
+        } else {
+            newSrc = src + element.attr("href").substring(1);
+        }
+
+        if (!pageExists(newSrc)){
+            return "Страницы не существует";
+        }
+        return newSrc;
+    }
+
+    public static boolean pageExists(String newSrc){
+        int responseCode = 0;
+
+        try {
+            URL url = new URL(newSrc);
+            HttpURLConnection huc = (HttpURLConnection) url.openConnection();
+            huc.setRequestMethod("HEAD");
+
+            responseCode = huc.getResponseCode();
+        } catch (Exception ex){
+            ex.printStackTrace();
+        }
+        if (responseCode != HttpURLConnection.HTTP_OK){
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    public String getSrc() {
+        return src;
+    }
+
+    public void setSrc(String src) {
+        this.src = src;
+    }
+
+    public CopyOnWriteArraySet<String> getLinks() {
+        return links;
+    }
+
+    public void setLinks(CopyOnWriteArraySet<String> links) {
+        this.links = links;
+    }
+}
